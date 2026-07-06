@@ -162,3 +162,132 @@ export function clearProfile(): void {
     console.error("Failed to clear profile from localStorage:", e);
   }
 }
+
+export async function syncProfileToSupabase(profile: UserProfile): Promise<void> {
+  if (typeof window === "undefined") return;
+
+  try {
+    const { createBrowserClient } = await import('@supabase/ssr');
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user found, skipping Supabase sync.");
+      return;
+    }
+
+    // 1. Get or create resume record
+    let { data: resume } = await supabase
+      .from('resumes')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    let resumeId;
+    if (resume) {
+      resumeId = resume.id;
+      await supabase
+        .from('resumes')
+        .update({ raw_text: JSON.stringify(profile) })
+        .eq('id', resumeId);
+    } else {
+      const { data: newResume, error: insertError } = await supabase
+        .from('resumes')
+        .insert({
+          user_id: user.id,
+          raw_text: JSON.stringify(profile)
+        })
+        .select('id')
+        .single();
+
+      if (insertError || !newResume) {
+        console.error("Failed to insert resume record:", insertError);
+        return;
+      }
+      resumeId = newResume.id;
+    }
+
+    // 2. Sync to resume_parsed table (1-to-1)
+    await supabase.from('resume_parsed').delete().eq('resume_id', resumeId);
+    await supabase.from('resume_parsed').insert({
+      resume_id: resumeId,
+      full_name: profile.identity.name || '',
+      email: profile.identity.email || '',
+      phone: profile.identity.phone || '',
+      location: profile.identity.location || '',
+      linkedin: profile.identity.linkedin || '',
+      portfolio: profile.identity.portfolio || '',
+      summary: '',
+      certifications: profile.certifications || [],
+      achievements: profile.achievements || [],
+      intent_energizes: profile.intent.energizes || '',
+      intent_culture: profile.intent.culture || '',
+      intent_proudest: profile.intent.proudest || '',
+      intent_goal: profile.intent.goal || ''
+    });
+
+    // 3. Sync to education table
+    await supabase.from('education').delete().eq('resume_id', resumeId);
+    if (profile.education && profile.education.length > 0) {
+      await supabase.from('education').insert(
+        profile.education.map((edu: any) => ({
+          resume_id: resumeId,
+          institution: edu.institution || '',
+          degree: edu.degree || '',
+          year: edu.year || '',
+          gpa: edu.gpa || null
+        }))
+      );
+    }
+
+    // 4. Sync to experience table
+    await supabase.from('experience').delete().eq('resume_id', resumeId);
+    if (profile.experience && profile.experience.length > 0) {
+      await supabase.from('experience').insert(
+        profile.experience.map((exp: any) => ({
+          resume_id: resumeId,
+          company: exp.company || '',
+          role: exp.role || '',
+          duration: exp.duration || '',
+          description: exp.description || '',
+          bullets: exp.bullets || []
+        }))
+      );
+    }
+
+    // 5. Sync to projects table
+    await supabase.from('projects').delete().eq('resume_id', resumeId);
+    if (profile.projects && profile.projects.length > 0) {
+      await supabase.from('projects').insert(
+        profile.projects.map((proj: any) => ({
+          resume_id: resumeId,
+          name: proj.name || '',
+          description: proj.description || '',
+          stack: proj.stack || '',
+          link: proj.link || null,
+          problem_solved: proj.problem_solved || '',
+          hardest_challenge: proj.hardest_challenge || '',
+          outcome: proj.outcome || ''
+        }))
+      );
+    }
+
+    // 6. Sync to skills table
+    await supabase.from('skills').delete().eq('resume_id', resumeId);
+    await supabase.from('skills').insert({
+      resume_id: resumeId,
+      languages: profile.skills.languages || [],
+      frameworks: profile.skills.frameworks || [],
+      tools: profile.skills.tools || [],
+      design: profile.skills.design || [],
+      other: profile.skills.other || []
+    });
+
+    console.log("Successfully synced profile to Supabase tables!");
+  } catch (err) {
+    console.error("Error in syncProfileToSupabase:", err);
+  }
+}

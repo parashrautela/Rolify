@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { loadProfile, saveProfile, UserProfile } from "@/lib/profile";
+import { loadProfile, saveProfile, UserProfile, syncProfileToSupabase } from "@/lib/profile";
 import { createBrowserClient } from '@supabase/ssr'
 
 const supabase = createBrowserClient(
@@ -158,57 +158,7 @@ export default function OnboardingQuestions() {
     saveProfile(profile);
 
     // Sync to Supabase in the background
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const resumeData = {
-          identity: profile.identity,
-          education: profile.education,
-          experience: profile.experience,
-          projects: profile.projects.map(({ name, stack, link, description }) => ({ name, stack, link, description })),
-          skills: profile.skills,
-          certifications: profile.certifications,
-          achievements: profile.achievements
-        };
-
-        const extraQuestions = {
-          intent: profile.intent,
-          project_deepdives: profile.projects.map(({ name, problem_solved, hardest_challenge, outcome }) => ({
-            project_name: name,
-            problem_solved,
-            hardest_challenge,
-            outcome
-          }))
-        };
-
-        const payload = JSON.stringify({
-          resume_data: resumeData,
-          extra_questions: extraQuestions
-        });
-
-        const { data: existingResume } = await supabase
-          .from('resumes')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (existingResume) {
-          await supabase
-            .from('resumes')
-            .update({ raw_text: payload })
-            .eq('user_id', user.id);
-        } else {
-          await supabase
-            .from('resumes')
-            .insert({
-              user_id: user.id,
-              raw_text: payload
-            });
-        }
-      }
-    } catch (dbError) {
-      console.error("Failed to sync identity to Supabase:", dbError);
-    }
+    syncProfileToSupabase(profile);
 
     setShowIdentityStep(false);
     setLoading(true);
@@ -252,59 +202,7 @@ export default function OnboardingQuestions() {
     }
 
     // Sync updated profile to Supabase in the background
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const resumeData = {
-            identity: updatedProfile.identity,
-            education: updatedProfile.education,
-            experience: updatedProfile.experience,
-            projects: updatedProfile.projects.map(({ name, stack, link, description }) => ({ name, stack, link, description })),
-            skills: updatedProfile.skills,
-            certifications: updatedProfile.certifications,
-            achievements: updatedProfile.achievements
-          };
-
-          const extraQuestions = {
-            intent: updatedProfile.intent,
-            project_deepdives: updatedProfile.projects.map(({ name, problem_solved, hardest_challenge, outcome }) => ({
-              project_name: name,
-              problem_solved,
-              hardest_challenge,
-              outcome
-            }))
-          };
-
-          const payload = JSON.stringify({
-            resume_data: resumeData,
-            extra_questions: extraQuestions
-          });
-
-          const { data: existingResume } = await supabase
-            .from('resumes')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (existingResume) {
-            await supabase
-              .from('resumes')
-              .update({ raw_text: payload })
-              .eq('user_id', user.id);
-          } else {
-            await supabase
-              .from('resumes')
-              .insert({
-                user_id: user.id,
-                raw_text: payload
-              });
-          }
-        }
-      } catch (err) {
-        console.error("Failed to sync question answer to Supabase:", err);
-      }
-    })();
+    syncProfileToSupabase(updatedProfile);
 
     // Refresh completeness score in the background
     fetch("/api/gap-analysis", {
@@ -370,54 +268,10 @@ export default function OnboardingQuestions() {
           .from('users')
           .update({ onboarding_complete: true })
           .eq('id', user.id);
-
-        // 2. Format the two-way data payload
-        const resumeData = {
-          identity: profile.identity,
-          education: profile.education,
-          experience: profile.experience,
-          projects: profile.projects.map(({ name, stack, link, description }) => ({ name, stack, link, description })),
-          skills: profile.skills,
-          certifications: profile.certifications,
-          achievements: profile.achievements
-        };
-
-        const extraQuestions = {
-          intent: profile.intent,
-          project_deepdives: profile.projects.map(({ name, problem_solved, hardest_challenge, outcome }) => ({
-            project_name: name,
-            problem_solved,
-            hardest_challenge,
-            outcome
-          }))
-        };
-
-        const payload = JSON.stringify({
-          resume_data: resumeData,
-          extra_questions: extraQuestions
-        });
-
-        // 3. Save to resumes table (check if existing first to update, otherwise insert)
-        const { data: existingResume } = await supabase
-          .from('resumes')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (existingResume) {
-          await supabase
-            .from('resumes')
-            .update({ raw_text: payload })
-            .eq('user_id', user.id);
-        } else {
-          await supabase
-            .from('resumes')
-            .insert({
-              user_id: user.id,
-              raw_text: payload
-            });
-        }
       }
+
+      // 2. Sync parsed details to all Supabase tables
+      await syncProfileToSupabase(profile);
     } catch (dbError) {
       console.error("Failed to save onboarding data to Supabase:", dbError);
     } finally {

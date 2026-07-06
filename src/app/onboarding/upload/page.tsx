@@ -2,13 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { saveProfile, UserProfile } from "@/lib/profile";
-import { createBrowserClient } from '@supabase/ssr'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { saveProfile, UserProfile, syncProfileToSupabase } from "@/lib/profile";
 
 // Local SVGs for self-contained premium design
 const UploadCloudIcon = () => (
@@ -243,53 +237,7 @@ export default function OnboardingUpload() {
       saveProfile(data);
 
       // Save parsed data to Supabase in the background
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const payload = JSON.stringify({
-            resume_data: {
-              identity: data.identity,
-              education: data.education,
-              experience: data.experience,
-              projects: data.projects.map((p: any) => ({ name: p.name || "", stack: p.stack || "", link: p.link || null, description: p.description || "" })),
-              skills: data.skills,
-              certifications: data.certifications,
-              achievements: data.achievements
-            },
-            extra_questions: {
-              intent: data.intent,
-              project_deepdives: data.projects.map((p: any) => ({
-                project_name: p.name || "",
-                problem_solved: p.problem_solved || "",
-                hardest_challenge: p.hardest_challenge || "",
-                outcome: p.outcome || ""
-              }))
-            }
-          });
-
-          const { data: existingResume } = await supabase
-            .from('resumes')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (existingResume) {
-            await supabase
-              .from('resumes')
-              .update({ raw_text: payload })
-              .eq('user_id', user.id);
-          } else {
-            await supabase
-              .from('resumes')
-              .insert({
-                user_id: user.id,
-                raw_text: payload
-              });
-          }
-        }
-      } catch (dbError) {
-        console.error("Failed to sync uploaded resume to Supabase:", dbError);
-      }
+      await syncProfileToSupabase(data);
 
       setUploadState("success");
     } catch (err: any) {
