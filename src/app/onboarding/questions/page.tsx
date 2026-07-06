@@ -154,7 +154,7 @@ export default function OnboardingQuestions() {
     fetchQuestions(profile);
   };
 
-  const handleSaveAnswer = async () => {
+  const handleSaveAnswer = () => {
     if (!profile || !activeQuestion) return;
 
     const currentAnswer = answers[activeQuestion.id] || "";
@@ -185,25 +185,26 @@ export default function OnboardingQuestions() {
     setProfile(updatedProfile);
     saveProfile(updatedProfile);
 
-    // Refresh completeness score
-    try {
-      const res = await fetch("/api/gap-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedProfile),
-      });
-      const data = await res.json();
-      if (data.profile_completeness !== undefined) {
-        setCompleteness(data.profile_completeness);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
-    // Go to next question
+    // Go to next question immediately for a fast, responsive UI
     if (activeIdx < questions.length - 1) {
       setActiveIdx(activeIdx + 1);
     }
+
+    // Refresh completeness score in the background
+    fetch("/api/gap-analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedProfile),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.profile_completeness !== undefined) {
+          setCompleteness(data.profile_completeness);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to update completeness score in background:", e);
+      });
   };
 
   const handleNext = () => {
