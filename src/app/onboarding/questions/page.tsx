@@ -3,6 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { loadProfile, saveProfile, UserProfile } from "@/lib/profile";
+import { createBrowserClient } from '@supabase/ssr'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 interface GapQuestion {
   id: string;
@@ -24,6 +30,7 @@ export default function OnboardingQuestions() {
   const [loading, setLoading] = useState(true);
   const [showIdentityStep, setShowIdentityStep] = useState(false);
   const [identityErrors, setIdentityErrors] = useState<Record<string, string>>({});
+  const [finishing, setFinishing] = useState(false);
 
   // Load profile and fetch questions
   useEffect(() => {
@@ -186,7 +193,7 @@ export default function OnboardingQuestions() {
     saveProfile(updatedProfile);
 
     // Go to next question immediately for a fast, responsive UI
-    if (activeIdx < questions.length - 1) {
+    if (activeIdx < questions.length) {
       setActiveIdx(activeIdx + 1);
     }
 
@@ -240,12 +247,75 @@ export default function OnboardingQuestions() {
     }
   };
 
-  const handleFinish = () => {
-    if (profile) {
-      saveProfile(profile);
+  const handleFinish = async () => {
+    if (!profile) return;
+
+    setFinishing(true);
+    saveProfile(profile);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // 1. Update onboarding status in users table
+        await supabase
+          .from('users')
+          .update({ onboarding_complete: true })
+          .eq('id', user.id);
+
+        // 2. Format the two-way data payload
+        const resumeData = {
+          identity: profile.identity,
+          education: profile.education,
+          experience: profile.experience,
+          projects: profile.projects.map(({ name, stack, link, description }) => ({ name, stack, link, description })),
+          skills: profile.skills,
+          certifications: profile.certifications,
+          achievements: profile.achievements
+        };
+
+        const extraQuestions = {
+          intent: profile.intent,
+          project_deepdives: profile.projects.map(({ name, problem_solved, hardest_challenge, outcome }) => ({
+            project_name: name,
+            problem_solved,
+            hardest_challenge,
+            outcome
+          }))
+        };
+
+        const payload = JSON.stringify({
+          resume_data: resumeData,
+          extra_questions: extraQuestions
+        });
+
+        // 3. Save to resumes table (check if existing first to update, otherwise insert)
+        const { data: existingResume } = await supabase
+          .from('resumes')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (existingResume) {
+          await supabase
+            .from('resumes')
+            .update({ raw_text: payload })
+            .eq('user_id', user.id);
+        } else {
+          await supabase
+            .from('resumes')
+            .insert({
+              user_id: user.id,
+              raw_text: payload
+            });
+        }
+      }
+    } catch (dbError) {
+      console.error("Failed to save onboarding data to Supabase:", dbError);
+    } finally {
+      localStorage.setItem("onboarding_complete", "true");
+      setFinishing(false);
+      router.push("/dashboard");
     }
-    localStorage.setItem("onboarding_complete", "true");
-    router.push("/dashboard");
   };
 
   return (
@@ -328,14 +398,14 @@ export default function OnboardingQuestions() {
           <div className="mt-6 pt-6 border-t border-hairline lg:block hidden">
             <button
               onClick={handleFinish}
-              disabled={showIdentityStep}
+              disabled={showIdentityStep || finishing}
               className={`w-full font-medium text-sm rounded-pill py-2.5 shadow-blue-sm transition-colors ${
-                showIdentityStep
+                showIdentityStep || finishing
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
                   : "bg-primary text-white hover:bg-primary-deep active:bg-primary-press"
               }`}
             >
-              Go to Dashboard
+              {finishing ? "Saving..." : "Go to Dashboard"}
             </button>
             <p className="text-[11px] text-ink-mute text-center mt-2.5">
               You can skip questions and fill them later.
@@ -533,9 +603,10 @@ export default function OnboardingQuestions() {
               </p>
               <button
                 onClick={handleFinish}
-                className="mt-8 bg-primary text-white font-medium text-sm rounded-pill px-8 py-3 hover:bg-primary-deep transition-colors shadow-blue-sm"
+                disabled={finishing}
+                className="mt-8 bg-primary text-white font-medium text-sm rounded-pill px-8 py-3 hover:bg-primary-deep transition-colors shadow-blue-sm disabled:opacity-50"
               >
-                Go to Dashboard
+                {finishing ? "Saving..." : "Go to Dashboard"}
               </button>
             </div>
           )}
@@ -543,14 +614,14 @@ export default function OnboardingQuestions() {
           <div className="mt-6 lg:hidden block w-full max-w-2xl px-4">
             <button
               onClick={handleFinish}
-              disabled={showIdentityStep}
+              disabled={showIdentityStep || finishing}
               className={`w-full font-medium text-sm rounded-pill py-2.5 shadow-blue-sm transition-colors ${
-                showIdentityStep
+                showIdentityStep || finishing
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
                   : "bg-primary text-white hover:bg-primary-deep"
               }`}
             >
-              Go to Dashboard
+              {finishing ? "Saving..." : "Go to Dashboard"}
             </button>
           </div>
         </section>
