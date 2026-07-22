@@ -180,7 +180,7 @@ export async function syncProfileToSupabase(profile: UserProfile): Promise<void>
     }
 
     // 1. Get or create resume record
-    let { data: resume } = await supabase
+    const { data: resume } = await supabase
       .from('resumes')
       .select('id')
       .eq('user_id', user.id)
@@ -233,7 +233,7 @@ export async function syncProfileToSupabase(profile: UserProfile): Promise<void>
     await supabase.from('education').delete().eq('resume_id', resumeId);
     if (profile.education && profile.education.length > 0) {
       await supabase.from('education').insert(
-        profile.education.map((edu: any) => ({
+        profile.education.map((edu: Education) => ({
           resume_id: resumeId,
           institution: edu.institution || '',
           degree: edu.degree || '',
@@ -247,12 +247,12 @@ export async function syncProfileToSupabase(profile: UserProfile): Promise<void>
     await supabase.from('experience').delete().eq('resume_id', resumeId);
     if (profile.experience && profile.experience.length > 0) {
       await supabase.from('experience').insert(
-        profile.experience.map((exp: any) => ({
+        profile.experience.map((exp: Experience) => ({
           resume_id: resumeId,
           company: exp.company || '',
           role: exp.role || '',
           duration: exp.duration || '',
-          description: exp.description || '',
+          description: '',
           bullets: exp.bullets || []
         }))
       );
@@ -262,7 +262,7 @@ export async function syncProfileToSupabase(profile: UserProfile): Promise<void>
     await supabase.from('projects').delete().eq('resume_id', resumeId);
     if (profile.projects && profile.projects.length > 0) {
       await supabase.from('projects').insert(
-        profile.projects.map((proj: any) => ({
+        profile.projects.map((proj: Project) => ({
           resume_id: resumeId,
           name: proj.name || '',
           description: proj.description || '',

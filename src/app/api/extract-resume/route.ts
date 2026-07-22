@@ -155,7 +155,7 @@ export async function POST(request: Request) {
           `Please extract all profile details from this resume text:\n\n${text}`,
           "claude-haiku-4-5-20251001"
         );
-      } catch (apiError: any) {
+      } catch (apiError: unknown) {
         console.error("Anthropic Claude Text API Error:", apiError);
         return NextResponse.json(
           { error: "Resume extraction failed. Please try again." },
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
           fileData,
           "claude-sonnet-4-5-20250929"
         );
-      } catch (apiError: any) {
+      } catch (apiError: unknown) {
         console.error("Anthropic Claude PDF Multimodal API Error:", apiError);
         return NextResponse.json(
           { error: "Resume extraction failed. Please try again." },
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
         },
         education: parsedProfile.education || [],
         experience: parsedProfile.experience || [],
-        projects: (parsedProfile.projects || []).map((p: any) => ({
+        projects: (parsedProfile.projects || []).map((p: { name?: string; stack?: string; link?: string; description?: string }) => ({
           name: p.name || "",
           stack: p.stack || "",
           link: p.link || null,
@@ -274,7 +274,7 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Extract resume route error:", error);
     return NextResponse.json(
       { error: "Resume extraction failed. Please try again." },

@@ -1,8 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rolify
+
+Rolify is an AI-powered resume tailoring and job application dashboard built with Next.js, React, and Supabase. It helps users automatically tailor their resumes to specific job descriptions, perform gap analysis, and generate cover letter insights.
+
+## Features
+
+- **Resume Extraction**: Upload your existing resume (supports PDF and DOCX formats via `pdf-parse` and `mammoth`).
+- **AI-Powered Tailoring**: Match your profile and experience against target Job Descriptions (JDs) to get a tailored resume.
+- **Gap Analysis**: Identifies missing keywords and highlights used keywords to improve ATS (Applicant Tracking System) scores.
+- **Cover Letter Generation**: Automatically generates customized answers to common application questions (e.g., "Why this role?", "Why this company?", "Biggest strength?", "Culture fit?").
+- **Authentication**: Secure user authentication and session management powered by Supabase.
+- **Dashboard**: A clean, responsive dashboard to view your tailoring scores, edit your profile, and manage your applications.
+
+## Tech Stack
+
+- **Frontend Framework**: [Next.js](https://nextjs.org) (App Router, v16.2)
+- **UI Library**: [React](https://react.dev) (v19.2)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com) (v4)
+- **Backend & Auth**: [Supabase](https://supabase.com) (`@supabase/supabase-js`, `@supabase/ssr`)
+- **Document Parsing**: `pdf-parse` (for PDFs), `mammoth` (for DOCX)
+- **Language**: TypeScript
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js (v20+)
+- npm, yarn, pnpm, or bun
+- A Supabase account and project
+
+### Environment Variables
+
+Create a `.env.local` file in the root of the project and add your Supabase credentials:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### Installation
+
+1. Clone the repository and navigate into the project directory.
+2. Install the dependencies:
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+### Running the Development Server
+
+Start the local development server:
 
 ```bash
 npm run dev
@@ -10,27 +60,27 @@ npm run dev
 yarn dev
 # or
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `src/app/`: Contains the Next.js App Router pages and layouts.
+  - `auth/`: Authentication pages (login, signup, callback).
+  - `dashboard/`: The main application dashboard where users tailor resumes.
+  - `onboarding/`: User onboarding flows.
+  - `api/`: Next.js Route Handlers.
+    - `extract-resume/`: Endpoint for parsing uploaded resumes.
+    - `gap-analysis/`: Endpoint for comparing user profile against JDs.
+    - `generate-resume/`: Endpoint for generating the tailored resume data.
+- `src/lib/`: Utility functions, Supabase client configurations, and shared types.
+- `src/proxy.ts`: Middleware for managing Supabase authentication sessions and route protection.
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
+The easiest way to deploy this Next.js application is to use the [Vercel Platform](https://vercel.com/new). Ensure you add your Supabase environment variables in the Vercel dashboard before deploying.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+*This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Geist, a new font family for Vercel.*

@@ -105,7 +105,7 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gap analysis route error:", error);
     return NextResponse.json(
       { error: "Resume extraction failed. Please try again." },

@@ -166,7 +166,7 @@ ${jd}`;
         { status: 500 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Generate resume route error:", error);
     return NextResponse.json(
       { error: "Resume generation failed. Please try again." },
