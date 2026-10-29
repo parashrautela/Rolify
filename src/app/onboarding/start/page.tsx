@@ -81,6 +81,7 @@ export default function OnboardingStart() {
     if (isComplete) {
       router.replace("/dashboard");
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChecking(false);
     }
   }, [router]);

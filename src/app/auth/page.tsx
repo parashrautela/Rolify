@@ -68,8 +68,9 @@ export default function AuthPage() {
       if (error) {
         setErrorMsg(error.message);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "An unexpected error occurred during Google sign-in.");
+    } catch (err: unknown) {
+      const e = err as Error;
+      setErrorMsg(e.message || "An unexpected error occurred during Google sign-in.");
     }
   };
 
@@ -95,8 +96,9 @@ export default function AuthPage() {
       } else {
         setSuccessMsg(`Check your email — we sent a magic link to ${email}`);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "An unexpected error occurred. Please try again.");
+    } catch (err: unknown) {
+      const e = err as Error;
+      setErrorMsg(e.message || "An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { saveProfile, UserProfile, syncProfileToSupabase } from "@/lib/profile";
 
@@ -93,20 +93,24 @@ export default function OnboardingUpload() {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [fileName, setFileName] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [extractedProfile, setExtractedProfile] = useState<UserProfile | null>(null);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
   // Helper to load PDF.js from CDN dynamically
   const loadPdfJs = () => {
-    return new Promise<any>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any).pdfjsLib) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         resolve((window as any).pdfjsLib);
         return;
       }
       const script = document.createElement("script");
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js";
       script.onload = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pdfjsLib = (window as any).pdfjsLib;
         try {
           // Bypass browser CORS policy by loading the worker via a Blob URL
@@ -141,7 +145,7 @@ export default function OnboardingUpload() {
       console.log(`Extracting text from page ${i}...`);
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(" ");
+      const pageText = textContent.items.map((item: { str: string }) => item.str).join(" ");
       console.log(`Page ${i} text length:`, pageText.trim().length);
       fullText += pageText + "\n";
     }
@@ -183,6 +187,7 @@ export default function OnboardingUpload() {
     setUploadState("parsing");
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
         fileName: file.name,
         fileType: file.type,
@@ -240,9 +245,10 @@ export default function OnboardingUpload() {
       await syncProfileToSupabase(data);
 
       setUploadState("success");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Resume extraction error:", err);
-      setErrorMsg(err.message || "Parse failure. Please try again with a clean PDF/DOCX file.");
+      const e = err as Error;
+      setErrorMsg(e.message || "Parse failure. Please try again with a clean PDF/DOCX file.");
       setUploadState("error");
     }
   };

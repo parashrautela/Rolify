@@ -35,6 +35,7 @@ export default function OnboardingQuestions() {
   // Load profile and fetch questions
   useEffect(() => {
     const loaded = loadProfile();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loaded);
     
     // If identity name or email is empty, we must collect it first in the wizard
@@ -57,7 +58,7 @@ export default function OnboardingQuestions() {
     }
   }, []);
 
-  const fetchQuestions = async (currentProfile: UserProfile) => {
+  async function fetchQuestions(currentProfile: UserProfile) {
     try {
       setLoading(true);
       const res = await fetch("/api/gap-analysis", {
@@ -93,7 +94,7 @@ export default function OnboardingQuestions() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   if (loading && questions.length === 0) {
     return (

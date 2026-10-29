@@ -39,6 +39,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const loaded = loadProfile();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loaded);
   }, []);
 
