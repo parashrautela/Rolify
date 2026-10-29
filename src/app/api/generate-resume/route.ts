@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { UserProfile } from "@/lib/profile";
+import { callAnthropic, parseJsonReply } from "@/lib/anthropic";
+import { corsHeaders, preflight } from "@/lib/cors";
+import { hasGroundingData, loadStoredProfile } from "@/lib/profile-server";
+import { normalizeParsedJD, type ParsedJD, type TailoredResumeData } from "@/lib/resume";
+import { getRequestUser } from "@/lib/supabase-server";
 
 const SYSTEM_PROMPT = `You are a world-class resume writer and ATS optimization expert. You help candidates land jobs at top companies by tailoring their resume to specific job descriptions.
 
@@ -85,92 +91,156 @@ JSON structure:
   }
 }`;
 
-async function callAnthropic(systemPrompt: string, userPrompt: string, model = "claude-sonnet-4-5-20250929") {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: model,
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.3
-    })
-  });
+const MAX_JD_CHARS = 20000;
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`Anthropic API error status ${response.status}: ${errorData.error?.message || response.statusText}`);
+async function tailor(profile: UserProfile, jdText: string): Promise<TailoredResumeData> {
+  const userPrompt = `Candidate Profile:
+${JSON.stringify(profile, null, 2)}
+
+Job Description:
+${jdText}`;
+
+  const rawContent = await callAnthropic(SYSTEM_PROMPT, userPrompt, "claude-sonnet-4-5-20250929");
+  const parsed = parseJsonReply<TailoredResumeData>(rawContent);
+  if (!parsed?.meta || !parsed?.resume) {
+    console.error("Unexpected generate-resume shape:", rawContent);
+    throw new SyntaxError("Response is missing meta or resume.");
+  }
+  return parsed;
+}
+
+/** The extension's review step lets the user drop items, so the kept ones lead the prompt. */
+function describeReviewedJd(jd: ParsedJD, sourceText: string): string {
+  const lines = [`Job title: ${jd.jobTitle}`];
+  if (jd.company) lines.push(`Company: ${jd.company}`);
+  if (jd.mustHaveSkills.length) lines.push(`Must-have skills: ${jd.mustHaveSkills.join(", ")}`);
+  if (jd.niceToHaveSkills.length) lines.push(`Nice-to-have skills: ${jd.niceToHaveSkills.join(", ")}`);
+  if (jd.atsKeywords.length) lines.push(`ATS keywords: ${jd.atsKeywords.join(", ")}`);
+  if (jd.responsibilities.length) lines.push(`Responsibilities:\n- ${jd.responsibilities.join("\n- ")}`);
+  lines.push("", "The candidate reviewed this breakdown and kept only the items above. Emphasize them.");
+  if (sourceText.trim()) {
+    lines.push("", "Original posting text, scraped from the job page:", sourceText.slice(0, MAX_JD_CHARS));
+  }
+  return lines.join("\n");
+}
+
+function failure(error: unknown, headers: Record<string, string>) {
+  if (error instanceof SyntaxError) {
+    console.error("JSON parsing error during generate-resume:", error);
+    return NextResponse.json(
+      { error: "Could not process response. Please try again." },
+      { status: 500, headers }
+    );
+  }
+  console.error("Generate resume route error:", error);
+  return NextResponse.json(
+    { error: "Resume generation failed. Please try again." },
+    { status: 500, headers }
+  );
+}
+
+/**
+ * Chrome extension: the profile comes from Supabase, never the request, and the
+ * result is saved so /resume/[id]/print can render it.
+ */
+async function generateForExtension(
+  supabase: SupabaseClient,
+  user: User,
+  body: { jdParsed: unknown; jdSourceText?: unknown; pageUrl?: unknown },
+  headers: Record<string, string>
+) {
+  const jd = normalizeParsedJD(body.jdParsed);
+  const sourceText = typeof body.jdSourceText === "string" ? body.jdSourceText : "";
+  const pageUrl = typeof body.pageUrl === "string" ? body.pageUrl : null;
+
+  if (!jd.jobTitle && !sourceText.trim()) {
+    return NextResponse.json({ error: "Job description is required." }, { status: 400, headers });
   }
 
-  const data = await response.json();
-  return data.content[0].text;
+  const profile = await loadStoredProfile(supabase, user.id);
+  if (!hasGroundingData(profile)) {
+    return NextResponse.json(
+      { error: "Your Rolify profile is empty. Finish setting it up on rolify.app first." },
+      { status: 409, headers }
+    );
+  }
+
+  const result = await tailor(profile, describeReviewedJd(jd, sourceText));
+
+  const { data: saved, error: saveError } = await supabase
+    .from("tailored_resumes")
+    .insert({
+      user_id: user.id,
+      job_title: result.meta.job_title || jd.jobTitle,
+      company: result.meta.company || jd.company,
+      page_url: pageUrl,
+      jd_source_text: sourceText,
+      jd_parsed: jd,
+      result,
+    })
+    .select("id")
+    .single();
+
+  if (saveError || !saved) {
+    console.error("Failed to save tailored resume:", saveError);
+    return NextResponse.json(
+      { error: "Your resume was generated but couldn't be saved. Please try again." },
+      { status: 500, headers }
+    );
+  }
+
+  return NextResponse.json(
+    {
+      resumeId: saved.id,
+      matchedKeywords: result.meta.used_keywords ?? [],
+      missingKeywords: result.meta.missing_keywords ?? [],
+    },
+    { headers }
+  );
+}
+
+export function OPTIONS(request: Request) {
+  return preflight(request);
 }
 
 export async function POST(request: Request) {
+  const headers = corsHeaders(request);
+
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error("Anthropic API key is missing or not configured.");
       return NextResponse.json(
         { error: "API key not configured." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
-    const { profile, jd }: { profile: UserProfile; jd: string } = await request.json();
+    const auth = await getRequestUser(request);
+    if (!auth) {
+      return NextResponse.json(
+        { error: "Your session expired. Log in again." },
+        { status: 401, headers }
+      );
+    }
+
+    const body = await request.json();
+
+    if (body?.jdParsed) {
+      return await generateForExtension(auth.supabase, auth.user, body, headers);
+    }
+
+    // Website dashboard: sends its local profile and the pasted JD, gets the full result back.
+    const { profile, jd }: { profile: UserProfile; jd: string } = body;
 
     if (!profile || !jd) {
       return NextResponse.json(
         { error: "Profile and Job Description are required." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
-    const userPrompt = `Candidate Profile:
-${JSON.stringify(profile, null, 2)}
-
-Job Description:
-${jd}`;
-
-    let rawContent = "";
-    try {
-      rawContent = await callAnthropic(SYSTEM_PROMPT, userPrompt, "claude-sonnet-4-5-20250929");
-    } catch (apiError) {
-      console.error("Anthropic API Error during generate-resume:", apiError);
-      return NextResponse.json(
-        { error: "Resume generation failed. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    // Clean up potential markdown formatting (like ```json ... ```)
-    let cleanedContent = rawContent.trim();
-    if (cleanedContent.startsWith("```")) {
-      cleanedContent = cleanedContent.replace(/^```[a-zA-Z]*\n/, "").replace(/\n```$/, "");
-    }
-    cleanedContent = cleanedContent.trim();
-
-    try {
-      const parsedData = JSON.parse(cleanedContent);
-      return NextResponse.json(parsedData);
-    } catch (parseError) {
-      console.error("JSON parsing error for content:", cleanedContent, parseError);
-      return NextResponse.json(
-        { error: "Could not process response. Please try again." },
-        { status: 500 }
-      );
-    }
-  } catch (error: any) {
-    console.error("Generate resume route error:", error);
-    return NextResponse.json(
-      { error: "Resume generation failed. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json(await tailor(profile, jd), { headers });
+  } catch (error) {
+    return failure(error, headers);
   }
 }

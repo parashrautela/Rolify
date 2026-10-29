@@ -3,11 +3,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createBrowserClient } from '@supabase/ssr'
+import { NEXT_PATH_COOKIE, safeNextPath } from "@/lib/redirect";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+// A cookie rather than a ?next= on redirectTo: query strings on the callback URL
+// would also have to be allow-listed in Supabase's redirect settings.
+const rememberNextPath = () => {
+  const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+  if (next) {
+    document.cookie = `${NEXT_PATH_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=900; samesite=lax`;
+  }
+};
 
 const GoogleLogo = () => (
   <svg
@@ -46,6 +56,7 @@ export default function AuthPage() {
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    rememberNextPath();
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -69,6 +80,7 @@ export default function AuthPage() {
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    rememberNextPath();
 
     try {
       const { error } = await supabase.auth.signInWithOtp({
