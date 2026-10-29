@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { NEXT_PATH_COOKIE, safeNextPath } from '@/lib/redirect'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
@@ -15,6 +16,11 @@ export async function GET(request: Request) {
 
   try {
     const cookieStore = await cookies()
+
+    // Set by /auth when sign-in started from a deep link (e.g. a resume print page)
+    const nextCookie = cookieStore.get(NEXT_PATH_COOKIE)?.value
+    const next = safeNextPath(nextCookie)
+    if (nextCookie) cookieStore.delete(NEXT_PATH_COOKIE)
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,7 +70,7 @@ export async function GET(request: Request) {
     }
 
     if (profile.onboarding_complete) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return NextResponse.redirect(new URL(next ?? '/dashboard', request.url))
     }
 
     return NextResponse.redirect(new URL('/onboarding/start', request.url))

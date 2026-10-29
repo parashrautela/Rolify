@@ -86,6 +86,21 @@ const Spinner = () => (
 
 type UploadState = "idle" | "dragging" | "parsing" | "success" | "error";
 
+// The slice of the PDF.js 2.16 global (loaded from cdnjs below) that this page uses.
+interface PdfJsLib {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument(src: { data: Uint8Array }): {
+    promise: Promise<{
+      numPages: number;
+      getPage(pageNumber: number): Promise<{
+        getTextContent(): Promise<{ items: Array<{ str: string }> }>;
+      }>;
+    }>;
+  };
+}
+
+type WindowWithPdfJs = Window & { pdfjsLib?: PdfJsLib };
+
 export default function OnboardingUpload() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,18 +115,20 @@ export default function OnboardingUpload() {
 
   // Helper to load PDF.js from CDN dynamically
   const loadPdfJs = () => {
-    return new Promise<unknown>((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((window as any).pdfjsLib) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        resolve((window as any).pdfjsLib);
+    return new Promise<PdfJsLib>((resolve, reject) => {
+      const loaded = (window as WindowWithPdfJs).pdfjsLib;
+      if (loaded) {
+        resolve(loaded);
         return;
       }
       const script = document.createElement("script");
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js";
       script.onload = () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pdfjsLib = (window as any).pdfjsLib;
+        const pdfjsLib = (window as WindowWithPdfJs).pdfjsLib;
+        if (!pdfjsLib) {
+          reject(new Error("PDF parsing engine loaded but did not initialize."));
+          return;
+        }
         try {
           // Bypass browser CORS policy by loading the worker via a Blob URL
           const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js');`;

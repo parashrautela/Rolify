@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { safeNextPath } from '@/lib/redirect'
 
 export async function proxy(req: NextRequest) {
   let res = NextResponse.next({
@@ -39,11 +40,17 @@ export async function proxy(req: NextRequest) {
   const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
 
   if (!session && !isAuthPage) {
-    return NextResponse.redirect(new URL("/auth", req.url))
+    const authUrl = new URL("/auth", req.url)
+    // Come back here after sign-in, e.g. a resume print link opened from the extension
+    if (req.nextUrl.pathname !== "/") {
+      authUrl.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search)
+    }
+    return NextResponse.redirect(authUrl)
   }
 
   if (session && isAuthPage) {
-    return NextResponse.redirect(new URL("/dashboard", req.url))
+    const next = safeNextPath(req.nextUrl.searchParams.get("next"))
+    return NextResponse.redirect(new URL(next ?? "/dashboard", req.url))
   }
 
   return res;
